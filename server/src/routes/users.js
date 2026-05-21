@@ -240,6 +240,20 @@ router.put('/friends/accept', authenticateToken, (req, res) => {
 
     db.prepare("UPDATE friendships SET status = 'accepted' WHERE id = ?").run(friendship_id);
 
+    // Notify the original requester that their request was accepted
+    createNotification(
+      db,
+      friendship.user_id,
+      'friend_accepted',
+      'Friend Request Accepted',
+      `${req.user.username} accepted your friend request`,
+      JSON.stringify({
+        friendship_id,
+        accepter_user_id: req.user.id,
+        accepter_username: req.user.username,
+      })
+    );
+
     res.json({ message: 'Friend request accepted' });
   } catch (err) {
     console.error('Accept friend error:', err);

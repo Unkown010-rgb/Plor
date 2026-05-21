@@ -140,6 +140,25 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// GET /api/auth/check-username?username=xxx - check username availability
+router.get('/check-username', (req, res) => {
+  try {
+    const { username } = req.query;
+
+    if (!username) {
+      return res.status(400).json({ error: 'username query parameter is required' });
+    }
+
+    const db = getDb();
+    const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+
+    res.json({ available: !existing });
+  } catch (err) {
+    console.error('Check username error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/auth/me - verify token and return current user
 router.get('/me', authenticateToken, (req, res) => {
   try {

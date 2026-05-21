@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const { initializeDatabase } = require('./database');
+const { initializeDatabase, getDb } = require('./database');
 const { authenticateToken } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('./middleware/auth');
@@ -35,9 +35,13 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
+const storeRoutes = require('./routes/store');
+const notificationRoutes = require('./routes/notifications');
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/games', require('./routes/games'));
+app.use('/api/store', storeRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -87,6 +91,17 @@ io.on('connection', (socket) => {
     });
     // Broadcast updated online count
     io.emit('online-status', { online_count: onlineUsers.size });
+
+    // Emit unread notification count to this user on connect
+    try {
+      const db = getDb();
+      const unreadRow = db.prepare(
+        "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read = 0"
+      ).get(socket.user.id);
+      socket.emit('notification-count', { unread_count: unreadRow.count });
+    } catch (e) {
+      console.error('Error fetching notification count on connect:', e);
+    }
   }
 
   // ── online-status: client requests current online info ──────────────────
@@ -229,6 +244,13 @@ io.on('connection', (socket) => {
     });
   });
 
+  // ── new-notification: server pushes a notification to this socket ───────
+  // The client can listen for this event to show real-time toasts/badges.
+  // Other server-side code can call emitNotification(userId, payload) below.
+  socket.on('new-notification', (payload) => {
+    // Client-initiated — ignore (server is the authoritative sender)
+  });
+
   // ── disconnect: clean up ────────────────────────────────────────────────
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`);
@@ -266,4 +288,29 @@ server.listen(PORT, () => {
   console.log(`Socket.io ready`);
 });
 
-module.exports = { app, server, io };
+/**
+ * Push a real-time notification to a specific user's socket (if online).
+ * Call this after inserting a notifications row via createNotification().
+ *
+ * @param {string} userId
+ * @param {object} payload - notification object to send to the client
+ */
+function emitNotification(userId, payload) {
+  const userData = onlineUsers.get(userId);
+  if (userData?.socketId) {
+    io.to(userData.socketId).emit('new-notification', payload);
+
+    // Also refresh their unread count badge
+    try {
+      const db = getDb();
+      const unreadRow = db.prepare(
+        "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read = 0"
+      ).get(userId);
+      io.to(userData.socketId).emit('notification-count', { unread_count: unreadRow.count });
+    } catch (e) {
+      console.error('Error emitting notification count:', e);
+    }
+  }
+}
+
+module.exports = { app, server, io, emitNotification };
