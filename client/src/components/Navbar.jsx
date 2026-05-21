@@ -1,322 +1,267 @@
-import React, { useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import '../styles/global.css'
 
-const COLORS = {
-  navy: '#0a0e1a',
-  navyLight: '#111827',
-  navyBorder: '#1e2a3a',
-  blue: '#3b82f6',
-  blueHover: '#2563eb',
-  green: '#22c55e',
-  yellow: '#facc15',
-  white: '#f1f5f9',
-  gray: '#94a3b8',
-  grayDark: '#475569',
+// Deterministic avatar background color derived from username
+function avatarColor(str = '') {
+  const palette = [
+    '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71',
+    '#1abc9c', '#3498db', '#9b59b6', '#e91e63',
+    '#00bcd4', '#ff5722', '#8bc34a', '#673ab7',
+  ]
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return palette[Math.abs(hash) % palette.length]
 }
 
-function avatarColor(username) {
-  const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#22c55e', '#06b6d4']
-  if (!username) return colors[0]
-  return colors[username.charCodeAt(0) % colors.length]
-}
+// Four colored blocks that make up the PLOR logo mark
+const LOGO_BLOCKS = ['#00a2ff', '#ff6b35', '#00d084', '#ffaa00']
 
 export default function Navbar() {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
+  const { user, logout, isAuthenticated } = useAuth()
   const location = useLocation()
-  const [menuOpen, setMenuOpen] = useState(false)
+  const navigate = useNavigate()
+
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const dropdownRef = useRef(null)
 
-  const handleLogout = () => {
+  // Close dropdown when clicking outside of it
+  useEffect(() => {
+    function handleOutsideClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  // Close menus on route change
+  useEffect(() => {
+    setMobileOpen(false)
+    setDropdownOpen(false)
+  }, [location.pathname])
+
+  const handleLogout = useCallback(() => {
+    setDropdownOpen(false)
+    setMobileOpen(false)
     logout()
-    navigate('/login')
-  }
+    navigate('/')
+  }, [logout, navigate])
 
-  const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/')
+  const isActive = (path) =>
+    location.pathname === path || location.pathname.startsWith(path + '/')
 
   const navLinks = [
-    { to: '/home', label: 'Home' },
-    { to: '/games', label: 'Games' },
-    { to: '/avatar', label: 'Avatar' },
+    { label: 'Home',   to: '/home' },
+    { label: 'Games',  to: '/games' },
+    { label: 'Avatar', to: '/avatar' },
+    { label: 'Store',  to: '/store', comingSoon: true },
   ]
 
+  const initial = (user?.username || user?.displayName || 'P').charAt(0).toUpperCase()
+  const bgColor  = avatarColor(user?.username || '')
+  const robux    = user?.robux_balance ?? user?.robux ?? user?.coins ?? 0
+  const username = user?.displayName || user?.username || 'Player'
+
   return (
-    <nav style={{
-      backgroundColor: COLORS.navy,
-      borderBottom: `2px solid ${COLORS.navyBorder}`,
-      position: 'sticky',
-      top: 0,
-      zIndex: 1000,
-      boxShadow: '0 2px 16px rgba(0,0,0,0.5)',
-    }}>
-      <div style={{
-        maxWidth: 1280,
-        margin: '0 auto',
-        padding: '0 20px',
-        display: 'flex',
-        alignItems: 'center',
-        height: 60,
-        gap: 8,
-      }}>
-        {/* Logo */}
-        <Link to="/home" style={{ textDecoration: 'none', marginRight: 24 }}>
-          <span style={{
-            fontSize: 26,
-            fontWeight: 900,
-            letterSpacing: '-0.5px',
-            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}>
-            PLOR
-          </span>
+    <>
+      <nav className="navbar">
+        {/* ── Brand ─────────────────────────────────── */}
+        <Link to={isAuthenticated ? '/home' : '/'} className="navbar-brand">
+          <div className="navbar-brand-logo-blocks">
+            {LOGO_BLOCKS.map((color, i) => (
+              <span key={i} style={{ backgroundColor: color }} />
+            ))}
+          </div>
+          <span className="navbar-brand-text">PLOR</span>
         </Link>
 
-        {/* Desktop nav links */}
-        <div style={{ display: 'flex', gap: 4, flex: 1 }} className="plor-desktop-nav">
-          {navLinks.map(link => (
-            <Link
-              key={link.to}
-              to={link.to}
-              style={{
-                color: isActive(link.to) ? COLORS.blue : COLORS.gray,
-                textDecoration: 'none',
-                padding: '6px 14px',
-                borderRadius: 8,
-                fontWeight: isActive(link.to) ? 700 : 500,
-                fontSize: 15,
-                backgroundColor: isActive(link.to) ? 'rgba(59,130,246,0.12)' : 'transparent',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                if (!isActive(link.to)) {
-                  e.currentTarget.style.color = COLORS.white
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'
-                }
-              }}
-              onMouseLeave={e => {
-                if (!isActive(link.to)) {
-                  e.currentTarget.style.color = COLORS.gray
-                  e.currentTarget.style.backgroundColor = 'transparent'
-                }
-              }}
-            >
-              {link.label}
-            </Link>
-          ))}
+        {/* ── Desktop nav links ─────────────────────── */}
+        <div className="navbar-links">
+          {navLinks.map((link) =>
+            link.comingSoon ? (
+              <span
+                key={link.label}
+                className="navbar-link coming-soon"
+                title="Coming Soon"
+              >
+                {link.label}
+              </span>
+            ) : (
+              <Link
+                key={link.label}
+                to={link.to}
+                className={`navbar-link${isActive(link.to) ? ' active' : ''}`}
+              >
+                {link.label}
+              </Link>
+            )
+          )}
         </div>
 
-        {/* Right side */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
-          {/* Plor Coins */}
-          {user && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              backgroundColor: 'rgba(250,204,21,0.1)',
-              border: '1px solid rgba(250,204,21,0.25)',
-              borderRadius: 20,
-              padding: '4px 12px',
-            }}>
-              <span style={{ fontSize: 16 }}>💰</span>
-              <span style={{ color: COLORS.yellow, fontWeight: 700, fontSize: 14 }}>
-                {(user.robux_balance || user.coins || 0).toLocaleString()}
-              </span>
-            </div>
-          )}
+        {/* ── Search bar ────────────────────────────── */}
+        <div className="navbar-search">
+          <input type="text" placeholder="Search games, players..." aria-label="Search" />
+          <span className="navbar-search-icon">&#128269;</span>
+        </div>
 
-          {/* User avatar dropdown */}
-          {user && (
-            <div style={{ position: 'relative' }}>
+        {/* ── Authenticated right side ──────────────── */}
+        {isAuthenticated && (
+          <div className="navbar-user">
+            {/* Robux / coin balance */}
+            <div className="navbar-robux" title="Your balance">
+              <span className="navbar-robux-icon">&#9733;</span>
+              <span>{Number(robux).toLocaleString()}</span>
+            </div>
+
+            {/* Avatar button + dropdown */}
+            <div className="navbar-dropdown-wrapper" ref={dropdownRef}>
               <button
-                onClick={() => setDropdownOpen(v => !v)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  backgroundColor: 'transparent',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 24,
-                  padding: '4px 12px 4px 4px',
-                  cursor: 'pointer',
-                  transition: 'border-color 0.15s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
+                className="navbar-avatar-btn"
+                onClick={() => setDropdownOpen((v) => !v)}
+                aria-label="Open user menu"
+                aria-expanded={dropdownOpen}
+                aria-haspopup="menu"
               >
-                <div style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: '50%',
-                  backgroundColor: avatarColor(user.username),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  fontWeight: 800,
-                  fontSize: 14,
-                  flexShrink: 0,
-                }}>
-                  {(user.username || 'U')[0].toUpperCase()}
+                <div
+                  className="navbar-avatar"
+                  style={{ backgroundColor: bgColor }}
+                  aria-hidden="true"
+                >
+                  {initial}
                 </div>
-                <span style={{ color: COLORS.white, fontWeight: 600, fontSize: 14 }}>
-                  {user.username}
+                <span className="navbar-username">{username}</span>
+                <span
+                  className={`navbar-dropdown-arrow${dropdownOpen ? ' open' : ''}`}
+                  aria-hidden="true"
+                >
+                  &#9660;
                 </span>
-                <span style={{ color: COLORS.gray, fontSize: 12 }}>▾</span>
               </button>
 
               {dropdownOpen && (
-                <>
-                  <div
-                    style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+                <div className="navbar-dropdown" role="menu">
+                  <Link
+                    to={`/profile/${user?.username}`}
+                    className="navbar-dropdown-item"
+                    role="menuitem"
                     onClick={() => setDropdownOpen(false)}
-                  />
-                  <div style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    right: 0,
-                    backgroundColor: '#141c2e',
-                    border: `1px solid ${COLORS.navyBorder}`,
-                    borderRadius: 12,
-                    minWidth: 180,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-                    zIndex: 1000,
-                    overflow: 'hidden',
-                  }}>
-                    <Link
-                      to={`/profile/${user.username}`}
-                      onClick={() => setDropdownOpen(false)}
-                      style={{
-                        display: 'block',
-                        padding: '12px 16px',
-                        color: COLORS.white,
-                        textDecoration: 'none',
-                        fontSize: 14,
-                        fontWeight: 500,
-                        transition: 'background 0.15s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      👤 My Profile
-                    </Link>
-                    <Link
-                      to="/avatar"
-                      onClick={() => setDropdownOpen(false)}
-                      style={{
-                        display: 'block',
-                        padding: '12px 16px',
-                        color: COLORS.white,
-                        textDecoration: 'none',
-                        fontSize: 14,
-                        fontWeight: 500,
-                        transition: 'background 0.15s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      🎮 Edit Avatar
-                    </Link>
-                    <div style={{ borderTop: `1px solid ${COLORS.navyBorder}` }} />
-                    <button
-                      onClick={handleLogout}
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        padding: '12px 16px',
-                        color: '#f87171',
-                        background: 'none',
-                        border: 'none',
-                        textAlign: 'left',
-                        fontSize: 14,
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        transition: 'background 0.15s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(248,113,113,0.08)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      🚪 Log Out
-                    </button>
-                  </div>
-                </>
+                  >
+                    <span aria-hidden="true">&#128100;</span> Profile
+                  </Link>
+                  <Link
+                    to="/avatar"
+                    className="navbar-dropdown-item"
+                    role="menuitem"
+                    onClick={() => setDropdownOpen(false)}
+                  >
+                    <span aria-hidden="true">&#128084;</span> Avatar
+                  </Link>
+                  <div className="navbar-dropdown-divider" role="separator" />
+                  <button
+                    className="navbar-dropdown-item danger"
+                    role="menuitem"
+                    onClick={handleLogout}
+                  >
+                    <span aria-hidden="true">&#128682;</span> Sign Out
+                  </button>
+                </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Hamburger (mobile) */}
-          <button
-            className="plor-hamburger"
-            onClick={() => setMenuOpen(v => !v)}
-            style={{
-              display: 'none',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 8,
-              color: COLORS.white,
-              fontSize: 22,
-            }}
-          >
-            {menuOpen ? '✕' : '☰'}
-          </button>
-        </div>
-      </div>
+        {/* ── Guest right side ──────────────────────── */}
+        {!isAuthenticated && (
+          <div className="navbar-user">
+            <Link to="/login"    className="btn btn-secondary btn-sm">Sign In</Link>
+            <Link to="/register" className="btn btn-primary   btn-sm">Sign Up</Link>
+          </div>
+        )}
 
-      {/* Mobile menu */}
-      {menuOpen && (
-        <div style={{
-          backgroundColor: COLORS.navyLight,
-          borderTop: `1px solid ${COLORS.navyBorder}`,
-          padding: '12px 20px',
-        }}>
-          {navLinks.map(link => (
+        {/* ── Hamburger (mobile) ────────────────────── */}
+        <button
+          className="navbar-hamburger"
+          aria-label="Toggle mobile menu"
+          aria-expanded={mobileOpen}
+          onClick={() => setMobileOpen((v) => !v)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+      </nav>
+
+      {/* ── Mobile drop-down menu ─────────────────────── */}
+      <div className={`navbar-mobile-menu${mobileOpen ? ' open' : ''}`} role="navigation">
+        {navLinks.map((link) =>
+          link.comingSoon ? (
+            <span
+              key={link.label}
+              className="navbar-link coming-soon"
+              style={{ opacity: 0.4 }}
+            >
+              {link.label} <small>(Soon)</small>
+            </span>
+          ) : (
             <Link
-              key={link.to}
+              key={link.label}
               to={link.to}
-              onClick={() => setMenuOpen(false)}
-              style={{
-                display: 'block',
-                color: isActive(link.to) ? COLORS.blue : COLORS.gray,
-                textDecoration: 'none',
-                padding: '10px 0',
-                fontWeight: isActive(link.to) ? 700 : 500,
-                fontSize: 16,
-                borderBottom: `1px solid ${COLORS.navyBorder}`,
-              }}
+              className={`navbar-link${isActive(link.to) ? ' active' : ''}`}
+              onClick={() => setMobileOpen(false)}
             >
               {link.label}
             </Link>
-          ))}
-          {user && (
-            <button
-              onClick={handleLogout}
-              style={{
-                marginTop: 8,
-                color: '#f87171',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: 16,
-                fontWeight: 500,
-                padding: '10px 0',
-              }}
-            >
-              Log Out
-            </button>
-          )}
-        </div>
-      )}
+          )
+        )}
 
-      <style>{`
-        @media (max-width: 640px) {
-          .plor-desktop-nav { display: none !important; }
-          .plor-hamburger { display: block !important; }
-        }
-      `}</style>
-    </nav>
+        {/* Mobile search */}
+        <div style={{ marginTop: 8 }}>
+          <input
+            type="text"
+            placeholder="Search..."
+            className="form-input"
+            style={{ height: 36, fontSize: 13 }}
+            aria-label="Search"
+          />
+        </div>
+
+        {!isAuthenticated && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <Link
+              to="/login"
+              className="btn btn-secondary btn-sm"
+              style={{ flex: 1, textAlign: 'center' }}
+              onClick={() => setMobileOpen(false)}
+            >
+              Sign In
+            </Link>
+            <Link
+              to="/register"
+              className="btn btn-primary btn-sm"
+              style={{ flex: 1, textAlign: 'center' }}
+              onClick={() => setMobileOpen(false)}
+            >
+              Sign Up
+            </Link>
+          </div>
+        )}
+
+        {isAuthenticated && (
+          <button
+            className="btn btn-danger btn-sm"
+            style={{ marginTop: 8, width: '100%' }}
+            onClick={handleLogout}
+          >
+            Sign Out
+          </button>
+        )}
+      </div>
+    </>
   )
 }
