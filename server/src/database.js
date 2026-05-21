@@ -77,7 +77,63 @@ function initializeDatabase() {
     )
   `);
 
+  // Gamepasses table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gamepasses (
+      id TEXT PRIMARY KEY,
+      game_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      price INTEGER NOT NULL,
+      icon TEXT DEFAULT '⭐',
+      benefits TEXT,
+      created_at TEXT
+    )
+  `);
+
+  // Store items table (avatar accessories/clothes)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS store_items (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      category TEXT NOT NULL,
+      price INTEGER NOT NULL,
+      icon TEXT,
+      rarity TEXT DEFAULT 'common',
+      created_at TEXT
+    )
+  `);
+
+  // Purchases table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS purchases (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      item_type TEXT NOT NULL,
+      price_paid INTEGER NOT NULL,
+      purchased_at TEXT
+    )
+  `);
+
+  // Notifications table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT,
+      data TEXT,
+      read INTEGER DEFAULT 0,
+      created_at TEXT
+    )
+  `);
+
   seedGames(db);
+  seedGamepasses(db);
+  seedStoreItems(db);
 
   console.log('Database initialized successfully');
   return db;
@@ -254,6 +310,98 @@ function seedGames(db) {
 
   insertMany(games);
   console.log(`Seeded ${games.length} games into database`);
+}
+
+function seedGamepasses(db) {
+  const existing = db.prepare('SELECT COUNT(*) as count FROM gamepasses').get();
+  if (existing.count > 0) return;
+
+  const now = new Date().toISOString();
+  const gamepasses = [
+    // Adventure
+    { id: uuidv4(), game_id: 'adventure', title: 'Speed Boost', description: 'Move 50% faster than other players.', price: 50, icon: '⚡', benefits: 'Speed +50%', created_at: now },
+    { id: uuidv4(), game_id: 'adventure', title: 'Double Jump', description: 'Jump twice in mid-air to reach new heights.', price: 75, icon: '🦘', benefits: 'Extra jump', created_at: now },
+    { id: uuidv4(), game_id: 'adventure', title: 'VIP Access', description: 'Unlock VIP-only areas and exclusive quests.', price: 150, icon: '👑', benefits: 'VIP areas, exclusive quests', created_at: now },
+
+    // Obby
+    { id: uuidv4(), game_id: 'obby', title: 'Checkpoint Saver', description: 'Save your checkpoint and return anytime.', price: 30, icon: '💾', benefits: 'Persistent checkpoints', created_at: now },
+    { id: uuidv4(), game_id: 'obby', title: 'Slow Fall', description: 'Descend slowly and never miss a platform.', price: 60, icon: '🪂', benefits: 'Reduced fall speed', created_at: now },
+    { id: uuidv4(), game_id: 'obby', title: 'Noclip Pass', description: 'Phase through walls for 10 seconds (3 uses).', price: 200, icon: '👻', benefits: 'Limited noclip ability', created_at: now },
+
+    // Roleplay
+    { id: uuidv4(), game_id: 'roleplay', title: 'Extra Character Slot', description: 'Create an additional character for roleplay.', price: 100, icon: '🎭', benefits: '+1 character slot', created_at: now },
+    { id: uuidv4(), game_id: 'roleplay', title: 'Premium Emotes', description: 'Unlock 20+ exclusive premium emote animations.', price: 80, icon: '💃', benefits: '20+ premium emotes', created_at: now },
+    { id: uuidv4(), game_id: 'roleplay', title: 'VIP Access', description: 'Unlock VIP lounge and premium storylines.', price: 150, icon: '🌟', benefits: 'VIP lounge, premium storylines', created_at: now },
+
+    // Fighting
+    { id: uuidv4(), game_id: 'fighting', title: 'Exclusive Weapon', description: 'Wield a legendary weapon unavailable to others.', price: 120, icon: '⚔️', benefits: 'Legendary weapon skin', created_at: now },
+    { id: uuidv4(), game_id: 'fighting', title: '2x XP Boost', description: 'Earn double XP on every match.', price: 90, icon: '📈', benefits: 'XP x2', created_at: now },
+    { id: uuidv4(), game_id: 'fighting', title: 'Tournament Entry', description: 'Enter exclusive ranked tournaments.', price: 175, icon: '🏆', benefits: 'Ranked tournament access', created_at: now },
+
+    // Simulator
+    { id: uuidv4(), game_id: 'simulator', title: 'Auto Collect', description: 'Automatically collect resources without clicking.', price: 70, icon: '🤖', benefits: 'Auto-collect resources', created_at: now },
+    { id: uuidv4(), game_id: 'simulator', title: '10x Money', description: 'Earn 10 times the in-game money from every action.', price: 200, icon: '💰', benefits: 'Money x10', created_at: now },
+    { id: uuidv4(), game_id: 'simulator', title: 'Rebirth Bonus', description: 'Gain extra rewards on each rebirth.', price: 130, icon: '🔄', benefits: 'Rebirth multiplier', created_at: now },
+
+    // Racing
+    { id: uuidv4(), game_id: 'racing', title: 'Turbo Boost', description: 'Activate a powerful turbo that doubles your speed.', price: 85, icon: '🚀', benefits: 'Turbo ability unlocked', created_at: now },
+    { id: uuidv4(), game_id: 'racing', title: 'Nitro Pack', description: 'Get 5 extra nitro charges per race.', price: 110, icon: '⛽', benefits: '+5 nitro per race', created_at: now },
+    { id: uuidv4(), game_id: 'racing', title: 'Exclusive Car Skin', description: 'Unlock a legendary car skin no one else has.', price: 160, icon: '🏎️', benefits: 'Legendary car skin', created_at: now },
+
+    // Generic (all games)
+    { id: uuidv4(), game_id: 'all', title: 'Premium Membership', description: 'Monthly premium perks across all Plor games.', price: 500, icon: '💎', benefits: 'Premium badge, 2x daily rewards, exclusive chat color', created_at: now },
+    { id: uuidv4(), game_id: 'all', title: 'Name Color', description: 'Display your username in a custom color.', price: 300, icon: '🎨', benefits: 'Custom username color', created_at: now },
+    { id: uuidv4(), game_id: 'all', title: 'Profile Badge', description: 'Show off a prestigious badge on your profile.', price: 250, icon: '🏅', benefits: 'Exclusive profile badge', created_at: now },
+  ];
+
+  const insert = db.prepare(`
+    INSERT INTO gamepasses (id, game_id, title, description, price, icon, benefits, created_at)
+    VALUES (@id, @game_id, @title, @description, @price, @icon, @benefits, @created_at)
+  `);
+  const insertMany = db.transaction((items) => { for (const item of items) insert.run(item); });
+  insertMany(gamepasses);
+  console.log(`Seeded ${gamepasses.length} gamepasses into database`);
+}
+
+function seedStoreItems(db) {
+  const existing = db.prepare('SELECT COUNT(*) as count FROM store_items').get();
+  if (existing.count > 0) return;
+
+  const now = new Date().toISOString();
+  const items = [
+    // Hats
+    { id: uuidv4(), name: 'Domino Crown', description: 'The most iconic hat on the platform — a true status symbol.', category: 'hat', price: 1000, icon: '👑', rarity: 'rare', created_at: now },
+    { id: uuidv4(), name: 'Sparkle Time Fedora', description: 'A shimmering fedora that sparkles with every step.', category: 'hat', price: 800, icon: '🎩', rarity: 'rare', created_at: now },
+    { id: uuidv4(), name: 'Pal Hair', description: 'A friendly, casual hairstyle for everyday adventures.', category: 'hat', price: 50, icon: '💇', rarity: 'common', created_at: now },
+
+    // Faces
+    { id: uuidv4(), name: 'Smile', description: 'A classic happy smile face.', category: 'face', price: 20, icon: '😊', rarity: 'common', created_at: now },
+    { id: uuidv4(), name: 'Chill Face', description: 'Stay cool with this relaxed, laid-back expression.', category: 'face', price: 150, icon: '😎', rarity: 'uncommon', created_at: now },
+    { id: uuidv4(), name: 'Shocked', description: 'Express total surprise with wide eyes and an open mouth.', category: 'face', price: 30, icon: '😮', rarity: 'common', created_at: now },
+
+    // Accessories
+    { id: uuidv4(), name: 'Sword of the Blox Knight', description: 'A legendary blade carried by the mightiest knights.', category: 'accessory', price: 500, icon: '⚔️', rarity: 'rare', created_at: now },
+    { id: uuidv4(), name: 'Wings', description: 'Majestic wings that make you look like an angel.', category: 'accessory', price: 2000, icon: '🪽', rarity: 'epic', created_at: now },
+    { id: uuidv4(), name: 'Magic Wand', description: 'Cast imaginary spells with this glowing wand.', category: 'accessory', price: 120, icon: '🪄', rarity: 'uncommon', created_at: now },
+
+    // Clothes
+    { id: uuidv4(), name: 'Classic Shirt', description: 'A simple, clean shirt for any occasion.', category: 'clothing', price: 10, icon: '👕', rarity: 'common', created_at: now },
+    { id: uuidv4(), name: 'Striped Tee', description: 'A trendy striped T-shirt with a retro vibe.', category: 'clothing', price: 15, icon: '👔', rarity: 'common', created_at: now },
+    { id: uuidv4(), name: 'Leather Jacket', description: 'Look tough and stylish with this sleek leather jacket.', category: 'clothing', price: 80, icon: '🧥', rarity: 'uncommon', created_at: now },
+    { id: uuidv4(), name: 'Space Suit', description: 'Gear up for intergalactic adventures.', category: 'clothing', price: 350, icon: '🚀', rarity: 'rare', created_at: now },
+
+    // Bundles
+    { id: uuidv4(), name: 'Robux Starter Pack', description: 'Kickstart your Plor journey with 500 bonus Robux virtual currency.', category: 'bundle', price: 200, icon: '💸', rarity: 'common', created_at: now },
+    { id: uuidv4(), name: 'Adventure Bundle', description: 'Everything you need to start adventuring — hat, face, and outfit included.', category: 'bundle', price: 300, icon: '🎒', rarity: 'uncommon', created_at: now },
+  ];
+
+  const insert = db.prepare(`
+    INSERT INTO store_items (id, name, description, category, price, icon, rarity, created_at)
+    VALUES (@id, @name, @description, @category, @price, @icon, @rarity, @created_at)
+  `);
+  const insertMany = db.transaction((items) => { for (const item of items) insert.run(item); });
+  insertMany(items);
+  console.log(`Seeded ${items.length} store items into database`);
 }
 
 module.exports = { getDb, initializeDatabase };

@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../database');
 const { authenticateToken } = require('../middleware/auth');
+const { createNotification } = require('./notifications');
 
 const router = express.Router();
 
@@ -192,10 +193,25 @@ router.post('/friends/request', authenticateToken, (req, res) => {
     }
 
     const friendshipId = uuidv4();
+    const now = new Date().toISOString();
     db.prepare(`
       INSERT INTO friendships (id, user_id, friend_id, status, created_at)
       VALUES (?, ?, ?, 'pending', ?)
-    `).run(friendshipId, req.user.id, targetUser.id, new Date().toISOString());
+    `).run(friendshipId, req.user.id, targetUser.id, now);
+
+    // Notify the target user about the incoming friend request
+    createNotification(
+      db,
+      targetUser.id,
+      'friend_request',
+      'Friend Request',
+      `${req.user.username} sent you a friend request`,
+      JSON.stringify({
+        friendship_id: friendshipId,
+        from_user_id: req.user.id,
+        from_username: req.user.username,
+      })
+    );
 
     res.status(201).json({ message: `Friend request sent to ${targetUser.username}` });
   } catch (err) {
