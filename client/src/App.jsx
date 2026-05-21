@@ -12,6 +12,8 @@ import Games from './pages/Games'
 import GamePlay from './pages/GamePlay'
 import Avatar from './pages/Avatar'
 import Profile from './pages/Profile'
+import Store from './pages/Store'
+import Robux from './pages/Robux'
 
 export default function App() {
   return (
@@ -62,6 +64,22 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/store"
+              element={
+                <ProtectedRoute>
+                  <Store />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/robux"
+              element={
+                <ProtectedRoute>
+                  <Robux />
                 </ProtectedRoute>
               }
             />
