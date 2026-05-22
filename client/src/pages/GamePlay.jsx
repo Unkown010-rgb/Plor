@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import * as THREE from 'three'
 import Navbar from '../components/Navbar'
+import { useAuth } from '../contexts/AuthContext'
+import { useSocket } from '../contexts/SocketContext'
 
 // ─── Game metadata ────────────────────────────────────────────────────────────
 const GAME_INFO = {
@@ -543,8 +545,6 @@ function initRacing(scene, camera, renderer) {
 
   // Track: oval loop made of road segments
   // Define track center-line as a series of points
-  const trackRadius = 60
-  const trackInnerRadius = 44
   const trackWidth = 16
   const numStraights = 32
 
@@ -571,7 +571,6 @@ function initRacing(scene, camera, renderer) {
     const b = centerLine[i + 1]
     const dir = b.clone().sub(a).normalize()
     const len = a.distanceTo(b)
-    const right = new THREE.Vector3(dir.z, 0, -dir.x)
 
     // Road segment
     const seg = new THREE.Mesh(
@@ -672,7 +671,7 @@ function initRacing(scene, camera, renderer) {
   const BRAKE = 24
   const DRAG = 6
   const TURN_SPEED = 1.8
-  let playerProgress = 0
+  let playerProgress = 0 // eslint-disable-line no-unused-vars
   let lastTime2 = performance.now()
 
   function updateCarAlongTrack(progress, car) {
@@ -764,22 +763,406 @@ function initRacing(scene, camera, renderer) {
   return state
 }
 
-// ─── React component ──────────────────────────────────────────────────────
+// ─── Avatar color helper ──────────────────────────────────────────────────────
+function playerColor(str = '') {
+  const palette = [
+    '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71',
+    '#1abc9c', '#3498db', '#9b59b6', '#e91e63',
+    '#00bcd4', '#ff5722', '#8bc34a', '#673ab7',
+  ]
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return palette[Math.abs(hash) % palette.length]
+}
+
+// ─── Players Online Panel ─────────────────────────────────────────────────────
+function PlayersPanel({ players, currentUsername, isOffline }) {
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 68,
+      right: 12,
+      width: 200,
+      background: 'rgba(10, 10, 24, 0.82)',
+      backdropFilter: 'blur(14px)',
+      WebkitBackdropFilter: 'blur(14px)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderRadius: 12,
+      overflow: 'hidden',
+      zIndex: 200,
+      boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '8px 12px',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        <span style={{ fontSize: 13 }}>🎮</span>
+        <span style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>
+          Players ({isOffline ? '—' : players.length})
+        </span>
+      </div>
+
+      {/* List */}
+      <div style={{ maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
+        {isOffline ? (
+          <div style={{ padding: '10px 12px', color: '#555577', fontSize: 11, textAlign: 'center' }}>
+            Offline mode
+          </div>
+        ) : players.length === 0 ? (
+          <div style={{ padding: '10px 12px', color: '#555577', fontSize: 11, textAlign: 'center' }}>
+            Waiting for players…
+          </div>
+        ) : (
+          players.map((p, i) => {
+            const isMe = p.username === currentUsername
+            const isHost = i === 0
+            const color = playerColor(p.username)
+            const initial = (p.username || 'P').charAt(0).toUpperCase()
+            return (
+              <div
+                key={p.socketId || p.username}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '5px 12px',
+                  background: isMe ? 'rgba(0,162,255,0.08)' : 'transparent',
+                  borderLeft: isMe ? '2px solid #00a2ff' : '2px solid transparent',
+                }}
+              >
+                {/* Avatar circle */}
+                <div style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  background: color,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: '#fff',
+                  flexShrink: 0,
+                }}>
+                  {initial}
+                </div>
+
+                <span style={{
+                  color: isMe ? '#00a2ff' : '#c8c8e0',
+                  fontSize: 12,
+                  fontWeight: isMe ? 700 : 500,
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {p.username}
+                  {isMe && <span style={{ color: '#8888aa', fontWeight: 400 }}> (you)</span>}
+                </span>
+
+                {isHost && (
+                  <span title="Host" style={{ fontSize: 12 }}>👑</span>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── In-game Chat ─────────────────────────────────────────────────────────────
+function GameChat({ socket, gameId, currentUsername }) {
+  const [messages,  setMessages]  = useState([])
+  const [input,     setInput]     = useState('')
+  const [collapsed, setCollapsed] = useState(false)
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    if (!socket) return
+
+    function onChat(msg) {
+      setMessages(prev => [...prev.slice(-49), msg])
+    }
+    socket.on('game-chat', onChat)
+    return () => socket.off('game-chat', onChat)
+  }, [socket])
+
+  // Auto-scroll
+  useEffect(() => {
+    if (!collapsed) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, collapsed])
+
+  function sendMessage() {
+    const text = input.trim()
+    if (!text || !socket) return
+    socket.emit('game-chat', { gameId, message: text })
+    setInput('')
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      sendMessage()
+    }
+  }
+
+  const visible = messages.slice(-5)
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 12,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      width: 420,
+      maxWidth: 'calc(100vw - 24px)',
+      background: 'rgba(8, 8, 20, 0.82)',
+      backdropFilter: 'blur(14px)',
+      WebkitBackdropFilter: 'blur(14px)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderRadius: 12,
+      overflow: 'hidden',
+      zIndex: 200,
+      boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+      transition: 'all 0.2s ease',
+    }}>
+      {/* Header / toggle */}
+      <div
+        onClick={() => setCollapsed(v => !v)}
+        style={{
+          padding: '6px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          borderBottom: collapsed ? 'none' : '1px solid rgba(255,255,255,0.07)',
+          userSelect: 'none',
+        }}
+      >
+        <span style={{ color: '#8888aa', fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>
+          💬 CHAT
+        </span>
+        <span style={{ color: '#555577', fontSize: 10 }}>{collapsed ? '▲' : '▼'}</span>
+      </div>
+
+      {!collapsed && (
+        <>
+          {/* Messages */}
+          <div style={{
+            padding: '6px 10px',
+            minHeight: 72,
+            maxHeight: 110,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 3,
+          }}>
+            {visible.length === 0 ? (
+              <span style={{ color: '#333355', fontSize: 11, alignSelf: 'center', marginTop: 16 }}>
+                No messages yet
+              </span>
+            ) : (
+              visible.map((msg, i) => (
+                <div key={i} style={{ fontSize: 12, lineHeight: 1.4 }}>
+                  <span style={{
+                    color: playerColor(msg.username),
+                    fontWeight: 700,
+                    marginRight: 6,
+                  }}>
+                    {msg.username}
+                  </span>
+                  <span style={{ color: '#d0d0e8' }}>{msg.message}</span>
+                </div>
+              ))
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div style={{
+            display: 'flex',
+            gap: 6,
+            padding: '6px 8px',
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <input
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder={socket ? 'Say something...' : 'Offline mode'}
+              disabled={!socket}
+              maxLength={200}
+              style={{
+                flex: 1,
+                height: 30,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 6,
+                color: '#fff',
+                fontSize: 12,
+                padding: '0 10px',
+                outline: 'none',
+              }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!socket || !input.trim()}
+              style={{
+                height: 30,
+                padding: '0 12px',
+                background: socket && input.trim() ? '#00a2ff' : 'rgba(255,255,255,0.06)',
+                border: 'none',
+                borderRadius: 6,
+                color: socket && input.trim() ? '#fff' : '#555577',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: socket && input.trim() ? 'pointer' : 'default',
+                transition: 'all 0.15s',
+                flexShrink: 0,
+              }}
+            >
+              Send
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── Username label overlay (canvas) ──────────────────────────────────────────
+function useLabelsOverlay(canvasRef, labelsCanvasRef, players, threeRef) {
+  useEffect(() => {
+    const labelsCanvas = labelsCanvasRef.current
+    const gameCanvas   = canvasRef.current
+    if (!labelsCanvas || !gameCanvas) return
+
+    function drawLabels() {
+      const { renderer, camera } = threeRef.current
+      if (!renderer || !camera) return
+
+      const ctx = labelsCanvas.getContext('2d')
+      const w   = labelsCanvas.width
+      const h   = labelsCanvas.height
+      ctx.clearRect(0, 0, w, h)
+
+      players.forEach(p => {
+        if (!p.position) return
+        // Project world position to screen
+        const pos3d = new THREE.Vector3(p.position.x, p.position.y + 2.5, p.position.z)
+        pos3d.project(camera)
+
+        const sx = (pos3d.x * 0.5 + 0.5) * w
+        const sy = (-pos3d.y * 0.5 + 0.5) * h
+
+        // Behind camera or off-screen
+        if (pos3d.z > 1) return
+        if (sx < 0 || sx > w || sy < 0 || sy > h) return
+
+        const text  = p.username || ''
+        const pad   = 5
+        ctx.font    = 'bold 12px Segoe UI, sans-serif'
+        const tw    = ctx.measureText(text).width
+        const bw    = tw + pad * 2
+        const bh    = 18
+
+        // Pill background
+        ctx.fillStyle = 'rgba(0,0,0,0.65)'
+        ctx.beginPath()
+        const rx = sx - bw / 2, ry = sy - bh / 2, rr = 4
+        if (ctx.roundRect) {
+          ctx.roundRect(rx, ry, bw, bh, rr)
+        } else {
+          ctx.rect(rx, ry, bw, bh)
+        }
+        ctx.fill()
+
+        // Text
+        ctx.fillStyle = '#fff'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(text, sx, sy)
+      })
+    }
+
+    // Run on animation frame
+    let raf
+    function tick() { drawLabels(); raf = requestAnimationFrame(tick) }
+    tick()
+    return () => cancelAnimationFrame(raf)
+  }, [players, canvasRef, labelsCanvasRef, threeRef])
+}
+
+// ─── React component ──────────────────────────────────────────────────────────
 export default function GamePlay() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const canvasRef = useRef(null)
-  const threeRef = useRef({})    // holds renderer, scene, camera, gameState
-  const [loading, setLoading] = useState(true)
-  const [gameState, setGameState] = useState({ won: false, score: 0, lapCount: 0, lapTime: 0, carSpeed: 0 })
+  const { id }       = useParams()
+  const navigate     = useNavigate()
+  const { user }     = useAuth()
+  const { socket }   = useSocket()
+
+  const canvasRef       = useRef(null)
+  const labelsCanvasRef = useRef(null)
+  const threeRef        = useRef({})    // holds renderer, scene, camera, gameState
+
+  const [loading,    setLoading]    = useState(true)
+  const [gameState,  setGameState]  = useState({ won: false, score: 0, lapCount: 0, lapTime: 0, carSpeed: 0 })
+  const [players,    setPlayers]    = useState([])
 
   // Sandbox color picker state
   const [selectedColor, setSelectedColor] = useState('#ff6b35')
 
   const gameMode = getGameMode(id)
-  const info = GAME_INFO[gameMode]
+  const info     = GAME_INFO[gameMode]
+  const currentUsername = user?.username || user?.displayName || 'Player'
 
-  // HUD polling for game-specific state
+  // ── Socket: join/leave game room ──────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    socket.emit('join-game', { gameId: id, username: currentUsername })
+
+    function onJoinedGame(data) {
+      // Server sends existing player list
+      if (Array.isArray(data?.players)) setPlayers(data.players)
+      else if (Array.isArray(data)) setPlayers(data)
+    }
+
+    function onPlayerJoined(data) {
+      setPlayers(prev => {
+        const exists = prev.find(p => p.socketId === data.socketId || p.username === data.username)
+        if (exists) return prev
+        return [...prev, data]
+      })
+    }
+
+    function onPlayerLeft(data) {
+      setPlayers(prev => prev.filter(
+        p => p.socketId !== data.socketId && p.username !== data.username
+      ))
+    }
+
+    socket.on('joined-game', onJoinedGame)
+    socket.on('player-joined', onPlayerJoined)
+    socket.on('player-left',  onPlayerLeft)
+
+    return () => {
+      socket.emit('leave-game', { gameId: id })
+      socket.off('joined-game', onJoinedGame)
+      socket.off('player-joined', onPlayerJoined)
+      socket.off('player-left',  onPlayerLeft)
+    }
+  }, [socket, id, currentUsername])
+
+  // ── HUD polling for game-specific state ───────────────────────────────────
   useEffect(() => {
     if (loading) return
     const interval = setInterval(() => {
@@ -791,7 +1174,7 @@ export default function GamePlay() {
         setGameState(s => ({
           ...s,
           lapCount: gs.lapCount,
-          lapTime: gs.lapTime,
+          lapTime:  gs.lapTime,
           carSpeed: Math.abs(gs.carSpeed),
         }))
       }
@@ -799,14 +1182,14 @@ export default function GamePlay() {
     return () => clearInterval(interval)
   }, [loading, gameMode])
 
-  // Propagate color picker changes to sandbox state
+  // ── Propagate color picker changes to sandbox state ───────────────────────
   useEffect(() => {
     if (gameMode === 'sandbox' && threeRef.current.gameState) {
       threeRef.current.gameState.selectedColor = selectedColor
     }
   }, [selectedColor, gameMode])
 
-  // Three.js initialization
+  // ── Three.js initialization ────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -830,12 +1213,19 @@ export default function GamePlay() {
 
     // Init game
     let gameStateObj
-    if (gameMode === 'obby') gameStateObj = initObby(scene, camera, renderer)
+    if (gameMode === 'obby')   gameStateObj = initObby(scene, camera, renderer)
     else if (gameMode === 'sandbox') gameStateObj = initSandbox(scene, camera, renderer)
-    else if (gameMode === 'racing') gameStateObj = initRacing(scene, camera, renderer)
+    else if (gameMode === 'racing')  gameStateObj = initRacing(scene, camera, renderer)
 
     threeRef.current = { renderer, scene, camera, gameState: gameStateObj }
     setLoading(false)
+
+    // Sync labels canvas size
+    function syncLabels() {
+      const lc = labelsCanvasRef.current
+      if (lc) { lc.width = window.innerWidth; lc.height = window.innerHeight - NAVBAR_HEIGHT }
+    }
+    syncLabels()
 
     // Resize handler
     function onResize() {
@@ -844,6 +1234,7 @@ export default function GamePlay() {
       renderer.setSize(nw, nh)
       camera.aspect = nw / nh
       camera.updateProjectionMatrix()
+      syncLabels()
     }
     window.addEventListener('resize', onResize)
 
@@ -857,6 +1248,9 @@ export default function GamePlay() {
     }
   }, [gameMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Username label overlay ────────────────────────────────────────────────
+  useLabelsOverlay(canvasRef, labelsCanvasRef, players, threeRef)
+
   const handleLeave = useCallback(() => navigate('/games'), [navigate])
 
   // Sandbox palette colors
@@ -868,13 +1262,34 @@ export default function GamePlay() {
     '#9e9e9e', '#607d8b', '#212121', '#f44336',
   ]
 
+  const isOffline = !socket
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: '#000' }}>
       <Navbar />
 
       {/* Game canvas container */}
       <div style={{ position: 'relative', flex: 1 }}>
-        <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+        {/* Three.js canvas */}
+        <canvas
+          id="game-canvas"
+          ref={canvasRef}
+          style={{ display: 'block', width: '100%', height: '100%' }}
+        />
+
+        {/* 2D username label overlay */}
+        <canvas
+          id="labels-canvas"
+          ref={labelsCanvasRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            width: '100%',
+            height: '100%',
+          }}
+        />
 
         {/* Loading screen */}
         {loading && (
@@ -1007,7 +1422,7 @@ export default function GamePlay() {
             {/* Sandbox color picker (bottom center) */}
             {gameMode === 'sandbox' && (
               <div style={{
-                position: 'absolute', bottom: 16, left: '50%',
+                position: 'absolute', bottom: 72, left: '50%',
                 transform: 'translateX(-50%)',
                 background: 'rgba(0,0,0,0.7)',
                 backdropFilter: 'blur(8px)',
@@ -1122,6 +1537,20 @@ export default function GamePlay() {
                 </div>
               </div>
             )}
+
+            {/* Players Online Panel */}
+            <PlayersPanel
+              players={players}
+              currentUsername={currentUsername}
+              isOffline={isOffline}
+            />
+
+            {/* In-game Chat */}
+            <GameChat
+              socket={socket}
+              gameId={id}
+              currentUsername={currentUsername}
+            />
           </>
         )}
       </div>

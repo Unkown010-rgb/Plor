@@ -6,6 +6,7 @@ const { initializeDatabase, getDb } = require('./database');
 const { authenticateToken } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('./middleware/auth');
+const { processMessage, clearState } = require('./chatFilter');
 
 // Initialize database
 initializeDatabase();
@@ -216,17 +217,33 @@ io.on('connection', (socket) => {
     const trimmed = String(message).trim().slice(0, 256);
     if (!trimmed) return;
 
+    const result = processMessage(socket.user.id, trimmed);
+
+    // User is muted — tell only them, don't broadcast
+    if (!result.allowed) {
+      socket.emit('chat-warning', {
+        type: 'muted',
+        message: `You are muted for ${result.muteRemaining} more seconds due to repeated inappropriate language.`,
+      });
+      return;
+    }
+
+    // Warn the sender privately if their message contained bad words
+    if (result.warned) {
+      const warnMsg = result.muted
+        ? `You have been muted for 5 minutes for using inappropriate language.`
+        : `Warning ${result.warningCount}/${3}: Inappropriate language is not allowed. ${result.warningsLeft} warning(s) left before mute.`;
+      socket.emit('chat-warning', { type: result.muted ? 'muted' : 'warning', message: warnMsg });
+    }
+
     const roomName = `game:${gameId}`;
-    const chatPayload = {
+    io.to(roomName).emit('game-chat', {
       userId: socket.user.id,
       username: socket.user.username,
-      message: trimmed,
+      message: result.message,   // filtered version
       gameId,
       timestamp: new Date().toISOString(),
-    };
-
-    // Broadcast to all in the room (including sender)
-    io.to(roomName).emit('game-chat', chatPayload);
+    });
   });
 
   // ── player-update: position / state updates ─────────────────────────────
@@ -257,6 +274,7 @@ io.on('connection', (socket) => {
 
     if (socket.user) {
       const userId = socket.user.id;
+      clearState(userId);
       const userData = onlineUsers.get(userId);
 
       if (userData?.gameId) {

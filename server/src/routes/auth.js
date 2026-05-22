@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../database');
 const { generateToken, authenticateToken } = require('../middleware/auth');
+const { checkUsername } = require('../chatFilter');
 
 const router = express.Router();
 
@@ -15,12 +16,13 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Username, email, and password are required' });
     }
 
-    if (username.length < 3 || username.length > 20) {
-      return res.status(400).json({ error: 'Username must be between 3 and 20 characters' });
-    }
-
     if (!/^[a-zA-Z0-9_]+$/.test(username)) {
       return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores' });
+    }
+
+    const usernameCheck = checkUsername(username);
+    if (!usernameCheck.clean) {
+      return res.status(400).json({ error: usernameCheck.reason });
     }
 
     if (password.length < 6) {
