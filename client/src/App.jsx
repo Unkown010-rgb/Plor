@@ -14,6 +14,7 @@ import Avatar from './pages/Avatar'
 import Profile from './pages/Profile'
 import Store from './pages/Store'
 import Robux from './pages/Robux'
+import CreateGame from './pages/CreateGame'
 
 export default function App() {
   return (
@@ -80,6 +81,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Robux />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/create"
+              element={
+                <ProtectedRoute>
+                  <CreateGame />
                 </ProtectedRoute>
               }
             />

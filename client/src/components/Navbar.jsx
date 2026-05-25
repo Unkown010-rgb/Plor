@@ -504,6 +504,43 @@ export default function Navbar() {
               {link.label}
             </Link>
           ))}
+          {isAuthenticated && (
+            <Link
+              to="/create"
+              style={{
+                display:        'inline-flex',
+                alignItems:     'center',
+                gap:            5,
+                padding:        '6px 14px',
+                borderRadius:   8,
+                fontSize:       14,
+                fontWeight:     700,
+                letterSpacing:  '-0.01em',
+                textDecoration: 'none',
+                whiteSpace:     'nowrap',
+                color:          '#fff',
+                background:     isActive('/create')
+                  ? 'linear-gradient(135deg, #0055dd 0%, #6a2ed4 100%)'
+                  : 'linear-gradient(135deg, #0066ff 0%, #7c3aed 100%)',
+                boxShadow:      '0 2px 12px rgba(0,102,255,0.35)',
+                transition:     'all 0.18s ease',
+                border:         '1px solid rgba(0,102,255,0.3)',
+                marginLeft:     4,
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.transform  = 'translateY(-1px)'
+                e.currentTarget.style.boxShadow  = '0 6px 20px rgba(0,102,255,0.55)'
+                e.currentTarget.style.filter     = 'brightness(1.1)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform  = 'translateY(0)'
+                e.currentTarget.style.boxShadow  = '0 2px 12px rgba(0,102,255,0.35)'
+                e.currentTarget.style.filter     = 'none'
+              }}
+            >
+              + Create
+            </Link>
+          )}
         </div>
 
         {/* ── Search bar ────────────────────────────── */}
@@ -633,6 +670,30 @@ export default function Navbar() {
             {link.label}
           </Link>
         ))}
+        {isAuthenticated && (
+          <Link
+            to="/create"
+            onClick={() => setMobileOpen(false)}
+            style={{
+              display:        'flex',
+              alignItems:     'center',
+              justifyContent: 'center',
+              gap:            6,
+              padding:        '9px 16px',
+              borderRadius:   8,
+              fontSize:       14,
+              fontWeight:     700,
+              color:          '#fff',
+              background:     'linear-gradient(135deg, #0066ff 0%, #7c3aed 100%)',
+              textDecoration: 'none',
+              boxShadow:      '0 2px 12px rgba(0,102,255,0.35)',
+              border:         '1px solid rgba(0,102,255,0.3)',
+              marginTop:      4,
+            }}
+          >
+            + Create Game
+          </Link>
+        )}
 
         {/* Mobile search */}
         <div style={{ marginTop: 8 }}>
