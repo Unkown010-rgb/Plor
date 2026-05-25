@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react'
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import * as THREE from 'three'
 import Navbar from '../components/Navbar'
@@ -1102,6 +1102,210 @@ function useLabelsOverlay(canvasRef, labelsCanvasRef, players, threeRef) {
   }, [players, canvasRef, labelsCanvasRef, threeRef])
 }
 
+// ─── Touch Controls ───────────────────────────────────────────────────────────
+const isTouchDevice = () => ('ontouchstart' in window) || navigator.maxTouchPoints > 0
+
+function TouchControls({ threeRef, gameMode }) {
+  const joystickRef    = useRef(null)   // joystick container DOM node
+  const touchIdRef     = useRef(null)   // active touch identifier
+  const originRef      = useRef({ x: 0, y: 0 })
+  const activeKeysRef  = useRef(new Set())  // keys we injected; cleared on release
+
+  const getKeys = () => threeRef.current?.gameState?.keys
+
+  // Inject / eject a key into the game's own keys Set
+  const press   = useCallback((k) => { getKeys()?.add(k); activeKeysRef.current.add(k) }, [])
+  const release = useCallback((k) => { getKeys()?.delete(k); activeKeysRef.current.delete(k) }, [])
+  const releaseAll = useCallback(() => {
+    activeKeysRef.current.forEach(k => getKeys()?.delete(k))
+    activeKeysRef.current.clear()
+  }, [])
+
+  // ── Joystick (Obby + Racing) ─────────────────────────────────────────────
+  const onJoyStart = useCallback((e) => {
+    e.preventDefault()
+    const touch = e.changedTouches[0]
+    touchIdRef.current = touch.identifier
+    const rect = joystickRef.current.getBoundingClientRect()
+    originRef.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+  }, [])
+
+  const onJoyMove = useCallback((e) => {
+    e.preventDefault()
+    const touch = [...e.changedTouches].find(t => t.identifier === touchIdRef.current)
+    if (!touch) return
+    const dx = touch.clientX - originRef.current.x
+    const dy = touch.clientY - originRef.current.y
+    const dist = Math.hypot(dx, dy)
+    if (dist < 8) { releaseAll(); return }
+
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI  // -180..180
+    releaseAll()
+
+    // Forward / back
+    if (angle > -135 && angle < -45)  press('w')   // up
+    if (angle > 45   && angle < 135)  press('s')   // down
+    // Left / right (with diagonals)
+    if (angle > 135 || angle < -135)  press('a')   // left
+    if (angle > -45 && angle < 45)    press('d')   // right
+    // Diagonals
+    if (angle > -135 && angle < -45) {
+      if (angle < -90) press('a')
+      if (angle > -90) press('d')
+    }
+  }, [press, releaseAll])
+
+  const onJoyEnd = useCallback((e) => {
+    e.preventDefault()
+    releaseAll()
+    touchIdRef.current = null
+  }, [releaseAll])
+
+  // 8-direction via angle recalc — replace diagonal logic with simpler threshold
+  const onJoyMoveFixed = useCallback((e) => {
+    e.preventDefault()
+    const touch = [...e.changedTouches].find(t => t.identifier === touchIdRef.current)
+    if (!touch) return
+    const dx = touch.clientX - originRef.current.x
+    const dy = touch.clientY - originRef.current.y
+    const DEAD = 10
+    releaseAll()
+    if (dy < -DEAD) press('w')
+    if (dy >  DEAD) press('s')
+    if (dx < -DEAD) press('a')
+    if (dx >  DEAD) press('d')
+  }, [press, releaseAll])
+
+  // ── Button helpers ───────────────────────────────────────────────────────
+  const btnEvents = (key) => ({
+    onTouchStart: (e) => { e.preventDefault(); press(key) },
+    onTouchEnd:   (e) => { e.preventDefault(); release(key) },
+    onMouseDown:  ()  => press(key),
+    onMouseUp:    ()  => release(key),
+    onMouseLeave: ()  => release(key),
+  })
+
+  if (!isTouchDevice() && !window.__forceTouch) return null
+
+  const base = {
+    position: 'fixed', zIndex: 500,
+    userSelect: 'none', WebkitUserSelect: 'none',
+    touchAction: 'none',
+  }
+
+  // ── OBBY controls ────────────────────────────────────────────────────────
+  if (gameMode === 'obby') return (
+    <>
+      {/* LEFT: Joystick */}
+      <div style={{ ...base, bottom: 100, left: 30 }}>
+        <div
+          ref={joystickRef}
+          onTouchStart={onJoyStart}
+          onTouchMove={onJoyMoveFixed}
+          onTouchEnd={onJoyEnd}
+          style={{
+            width: 110, height: 110, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.08)',
+            border: '2px solid rgba(255,255,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+          }}
+        >
+          {/* Arrow ring */}
+          {[['▲','w',0,-36],['▼','s',0,36],['◀','a',-36,0],['▶','d',36,0]].map(([icon,,,tx,ty]) => null)}
+          <div style={{ fontSize: 28, color: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }}>⊕</div>
+        </div>
+        {/* D-pad buttons over joystick */}
+        <div style={{ position: 'absolute', inset: 0 }}>
+          {[
+            { icon: '▲', key: 'w', t: 0,  l: '50%', transform: 'translateX(-50%)' },
+            { icon: '▼', key: 's', b: 0,  l: '50%', transform: 'translateX(-50%)' },
+            { icon: '◀', key: 'a', l: 0,  t: '50%', transform: 'translateY(-50%)' },
+            { icon: '▶', key: 'd', r: 0,  t: '50%', transform: 'translateY(-50%)' },
+          ].map(({ icon, key, t, b, l, r, transform }) => (
+            <div key={key} {...btnEvents(key)} style={{
+              position: 'absolute', width: 32, height: 32,
+              top: t, bottom: b, left: l, right: r, transform,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, color: 'rgba(255,255,255,0.7)',
+              cursor: 'pointer',
+            }}>{icon}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* RIGHT: Jump */}
+      <div style={{ ...base, bottom: 100, right: 30 }}>
+        <div {...btnEvents(' ')} style={{
+          width: 80, height: 80, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #0066ff, #7c3aed)',
+          border: '2px solid rgba(255,255,255,0.25)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexDirection: 'column', gap: 2,
+          boxShadow: '0 4px 24px rgba(0,102,255,0.5)',
+          cursor: 'pointer',
+        }}>
+          <span style={{ fontSize: 22 }}>⬆</span>
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>JUMP</span>
+        </div>
+      </div>
+    </>
+  )
+
+  // ── RACING controls ──────────────────────────────────────────────────────
+  if (gameMode === 'racing') return (
+    <>
+      {/* LEFT: Steer */}
+      <div style={{ ...base, bottom: 80, left: 20, display: 'flex', gap: 12 }}>
+        {[['◀','a'], ['▶','d']].map(([icon, key]) => (
+          <div key={key} {...btnEvents(key)} style={{
+            width: 70, height: 70, borderRadius: 14,
+            background: 'rgba(255,255,255,0.1)',
+            border: '2px solid rgba(255,255,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 26, color: '#fff',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            cursor: 'pointer',
+          }}>{icon}</div>
+        ))}
+      </div>
+
+      {/* RIGHT: Gas + Brake */}
+      <div style={{ ...base, bottom: 80, right: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {[['▲ GAS','w','linear-gradient(135deg,#00c853,#1b5e20)'],
+          ['▼ BRAKE','s','linear-gradient(135deg,#ff1744,#b71c1c)']].map(([label,key,bg]) => (
+          <div key={key} {...btnEvents(key)} style={{
+            width: 90, height: 56, borderRadius: 14,
+            background: bg,
+            border: '2px solid rgba(255,255,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: 1,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            cursor: 'pointer',
+          }}>{label}</div>
+        ))}
+      </div>
+    </>
+  )
+
+  // ── SANDBOX: tap-to-place hint + zoom tip ────────────────────────────────
+  if (gameMode === 'sandbox') return (
+    <div style={{ ...base, bottom: 80, left: '50%', transform: 'translateX(-50%)' }}>
+      <div style={{
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12,
+        padding: '8px 18px', color: 'rgba(255,255,255,0.7)',
+        fontSize: 13, fontWeight: 600, textAlign: 'center',
+        whiteSpace: 'nowrap',
+      }}>
+        👆 Tap canvas to place · Pinch to zoom
+      </div>
+    </div>
+  )
+
+  return null
+}
+
 // ─── React component ──────────────────────────────────────────────────────────
 export default function GamePlay() {
   const { id }       = useParams()
@@ -1274,7 +1478,7 @@ export default function GamePlay() {
         <canvas
           id="game-canvas"
           ref={canvasRef}
-          style={{ display: 'block', width: '100%', height: '100%' }}
+          style={{ display: 'block', width: '100%', height: '100%', touchAction: 'none' }}
         />
 
         {/* 2D username label overlay */}
@@ -1552,6 +1756,11 @@ export default function GamePlay() {
               currentUsername={currentUsername}
             />
           </>
+        )}
+
+        {/* Touch / mobile controls */}
+        {!loading && (
+          <TouchControls threeRef={threeRef} gameMode={gameMode} />
         )}
       </div>
     </div>
