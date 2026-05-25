@@ -47,9 +47,18 @@ function initializeDatabase() {
       created_by TEXT NOT NULL,
       rating REAL NOT NULL DEFAULT 0,
       plays INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      game_type TEXT DEFAULT 'obby',
+      thumbnail_color TEXT DEFAULT '#0066ff',
+      thumbnail_emoji TEXT DEFAULT '🎮'
     )
   `);
+
+  // Add new columns to existing games table if they don't exist yet
+  try { db.exec(`ALTER TABLE games ADD COLUMN game_type TEXT DEFAULT 'obby'`); } catch (_) {}
+  try { db.exec(`ALTER TABLE games ADD COLUMN thumbnail_color TEXT DEFAULT '#0066ff'`); } catch (_) {}
+  try { db.exec(`ALTER TABLE games ADD COLUMN thumbnail_emoji TEXT DEFAULT '🎮'`); } catch (_) {}
+
 
   // Friendships table
   db.exec(`

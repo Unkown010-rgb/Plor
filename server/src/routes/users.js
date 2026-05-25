@@ -44,6 +44,29 @@ router.get('/:username', (req, res) => {
   }
 });
 
+// GET /api/users/:username/games - get games created by a specific user (public)
+router.get('/:username/games', (req, res) => {
+  try {
+    const db = getDb();
+    const user = db.prepare(
+      'SELECT id FROM users WHERE username = ?'
+    ).get(req.params.username);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const games = db.prepare(
+      'SELECT * FROM games WHERE created_by = ? ORDER BY created_at DESC'
+    ).all(user.id);
+
+    res.json({ games });
+  } catch (err) {
+    console.error('Get user games error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // PUT /api/users/profile - update own profile (auth required)
 router.put('/profile', authenticateToken, (req, res) => {
   try {
